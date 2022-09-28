@@ -6,7 +6,7 @@ import {
   TerraChainId,
 } from "@certusone/wormhole-sdk";
 import { formatUnits } from "@ethersproject/units";
-import { LCDClient, isTxError } from "@terra-money/terra.js";
+import { LCDClient, isTxError, Coin, Fee } from "@terra-money/terra.js";
 import { ConnectedWallet, TxResult } from "@terra-money/wallet-provider";
 import axios from "axios";
 import {
@@ -115,12 +115,32 @@ export async function postWithFees(
     }
   );
 
+  let ulunaStabilityFee = new Coin("uluna", 0);
+  console.log(ulunaStabilityFee);
+  msgs.forEach((msg) => {
+    // coins doesn't support forEach or reduce
+    msg?.coins?.map((coin: Coin) => {
+      if (coin.denom === "uluna") {
+        ulunaStabilityFee = ulunaStabilityFee.add(coin);
+      }
+      return undefined;
+    });
+  });
+  // this leaves the amount as a Dec - no bueno - convert that to Int, otherwise we'll get math/big: cannot unmarshal
+  ulunaStabilityFee = ulunaStabilityFee.mul(0.012).toIntCeilCoin();
+
+  // handle LUNA 1.2% "stability fee"
+  // const feeEstimateWithTax = new Fee(feeEstimate.gas_limit, )
+
   const result = await wallet.post({
     msgs: [...msgs],
     memo,
     feeDenoms,
     gasPrices,
-    fee: feeEstimate,
+    fee: new Fee(
+      feeEstimate.gas_limit,
+      feeEstimate.amount.add(ulunaStabilityFee)
+    ),
     // @ts-ignore, https://github.com/terra-money/terra.js/pull/295 (adding isClassic property)
     isClassic: lcd.config.isClassic,
   });
